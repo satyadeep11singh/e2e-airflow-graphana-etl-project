@@ -1,303 +1,191 @@
 # E2E Insurance Data Pipeline
 
-A complete end-to-end (E2E) data pipeline built with Apache Airflow on Astronomer Runtime. This project demonstrates a modern data lakehouse architecture with Landing → Bronze → Silver → Gold layers.
+Apache Airflow-based ETL pipeline for insurance data with PostgreSQL data warehouse and Grafana dashboards.
 
-## 🎯 Project Overview
-
-This project implements a three-stage data transformation pipeline for insurance data:
+## Architecture
 
 ```
-Landing Zone (CSV) 
+Landing Zone (CSV)
+    ↓ DAG 1: insurance_ingestion
+Bronze Layer (Parquet)
+    ↓ DAG 2: bronze_to_silver
+Silver Layer (PostgreSQL)
+    ↓ DAG 3: gold_transformation
+Gold Layer (Fact Tables)
     ↓
-Bronze Layer (Parquet) [Raw/Immutable Data]
-    ↓
-Silver Layer (SQL Tables) [Cleaned/Standardized]
-    ↓
-Gold Layer (Fact Tables) [Business-Ready Analytics]
+Grafana Dashboards
 ```
 
-## 📊 Architecture
+## Quick Start
 
-### **Data Layers**
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Landing** | CSV Files | Raw incoming data |
-| **Bronze** | Parquet Files | Immutable raw copy with metadata |
-| **Silver** | PostgreSQL Tables | Cleaned, deduplicated, standardized data |
-| **Gold** | PostgreSQL Fact Tables | Enriched, joined, business-ready data |
-
-### **Data Warehouse**
-
-- **Database:** PostgreSQL 12.6
-- **Host:** localhost
-- **Port:** 5435
-- **Credentials:** postgres / postgres
-- **Schemas:** silver, gold
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Python 3.8+
-- Astronomer CLI (optional)
-
-### Start the Pipeline
-
+### 1. Start Airflow & PostgreSQL
 ```bash
-cd c:\Users\satya\OneDrive\Desktop\e2e-project
 astro dev start
 ```
 
-This spins up:
-- Airflow Scheduler (monitors DAGs)
-- Airflow API Server (UI at http://localhost:8080)
-- Airflow Triggerer (manages async tasks)
-- DAG Processor (parses DAG files)
-- PostgreSQL Database (port 5435)
-
-### Access Airflow UI
-
-```
-URL: http://localhost:8080
-Username: admin
-Password: admin
+### 2. Start Grafana
+```bash
+docker run -d -p 3000:3000 --name grafana grafana/grafana:latest
 ```
 
-## 📁 Project Structure
+### 3. Access Services
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Airflow | http://localhost:8080 | admin / admin |
+| Grafana | http://localhost:3000 | admin / admin |
+| PostgreSQL | localhost:5435 | postgres / postgres |
+
+## Project Structure
 
 ```
 e2e-project/
 ├── dags/
-│   ├── 1_insurance_ingestion.py           # Landing → Bronze
-│   ├── 2_bronze_to_silver.py              # Bronze → Silver
-│   ├── 3_gold_transformation.py           # Silver → Gold
-│   └── .airflowignore
+│   ├── 1_insurance_ingestion.py       (CSV → Parquet)
+│   ├── 2_bronze_to_silver.py          (Parquet → SQL)
+│   └── 3_gold_transformation.py       (Joins & enrichment)
+├── sql/
+│   ├── 01_reporting_queries.sql       (66 reporting queries)
+│   ├── 02_quality_tests.sql           (Data quality checks)
+│   └── 03_scheduling_and_monitoring.sql
 ├── include/
-│   ├── landing/                           # CSV input files
-│   │   └── archive/                       # Processed files
-│   └── bronze/                            # Parquet files
-├── sql/                                   # SQL queries & tests
-│   ├── 01_reporting_queries.sql           # 66 reporting queries
-│   ├── 02_quality_tests.sql               # Data quality tests
-│   └── 03_scheduling_and_monitoring.sql   # Monitoring queries
-├── docs/                                  # Documentation
-├── scripts/                               # Utility scripts
-├── config/                                # Configuration files
-├── plugins/                               # Custom operators
-├── tests/                                 # Test suites
-├── docker-compose.yaml
-├── Dockerfile
-├── requirements.txt
-├── packages.txt
-└── README.md
+│   ├── landing/                       (CSV input)
+│   └── bronze/                        (Parquet files)
+├── config/
+│   └── airflow_settings.yaml
+├── .astro/                            (Astronomer runtime config)
+└── README.md                          (This file)
 ```
 
-## 🔄 DAGs (Data Pipelines)
+## Database
 
-### **DAG 1: `1_insurance_ingestion` (Landing → Bronze)**
-
-**Purpose:** Read CSV files, add metadata, convert to Parquet
-
-**Schedule:** Daily at 2:00 AM UTC (0 2 * * *)
-
-**Output:** Parquet files in `/include/bronze/` with `ingested_at` and `batch_id` columns
-
----
-
-### **DAG 2: `2_bronze_to_silver` (Bronze → Silver)**
-
-**Purpose:** Load Parquet files into PostgreSQL with dynamic table creation
-
-**Schedule:** Daily at 3:00 AM UTC (0 3 * * *) - 1 hour after DAG 1
-
-**Features:**
-- Dynamically creates separate tables for each parquet file
-- Handles schema evolution (adds new columns as needed)
-
-**Silver Tables Created (6 total):**
-- `stg_premiums` (657 columns, 95,308 rows)
-- `stg_acs_md_15_5yr_dp03_20251218` (556 columns)
-- `stg_acs_md_15_5yr_dp05_20251218` (344 columns)
-- `stg_territory_definitions_table_20251218` (8 columns)
-- `stg_cgr_definitions_table_20251218` (10 columns)
-- `stg_cgr_premiums_table_20251218` (14 columns)
-
----
-
-### **DAG 3: `3_gold_transformation` (Silver → Gold)**
-
-**Purpose:** Create enriched fact table by joining all silver tables
-
-**Schedule:** Daily at 4:00 AM UTC (0 4 * * *) - 1 hour after DAG 2
-
-**Gold Table:**
-- `fact_insurance_performance` (666 columns, 95,536 rows)
-
-**Joins:** stg_premiums → territory_definitions → ACS_DP03 → ACS_DP05
-
----
-
-## 📈 Data Quality Metrics
-
-| Metric | Value | Status |
-|---|---|---|
-| Total Records (Gold) | 95,536 | ✅ |
-| Gender Completeness | 97.13% | ✅ |
-| Batch Consistency | 100% | ✅ |
-| Territory Matches | 1.20% | ⚠️ Limited |
-| Census Coverage | 1.22% | ⚠️ Limited |
-
-## 🔍 Reporting & Analytics
-
-SQL files located in `sql/` directory:
-
-### **01_reporting_queries.sql**
-66 comprehensive queries for:
-- Basic reporting (summary stats, territory performance)
-- Data quality (NULL checks, duplicate detection)
-- Dashboard preparation (demographics, revenue analysis)
-- KPIs (pipeline health, data quality scores)
-- Data exports
-
-### **02_quality_tests.sql**
-Comprehensive data quality test suite:
-- NULL checks (all 17 columns)
-- Duplicate detection (exact & key-based)
-- Data consistency validation
-- Batch processing tests
-- Automated alerting & monitoring
-- Overall quality scorecards
-
-### **03_scheduling_and_monitoring.sql**
-DAG scheduling & monitoring:
-- Cron expression reference
-- Health check templates
-- Weekly/monthly report queries
-- Real-time monitoring
-- PowerShell scheduling examples
-
-### Quick Query Examples
-
-```sql
--- Overall summary
-SELECT COUNT(*) as total_records, 
-       COUNT(DISTINCT territory_label) as unique_territories
-FROM gold.fact_insurance_performance;
-
--- Territory performance
-SELECT territory_label, COUNT(*) as record_count, 
-       AVG(CAST(current_premium AS NUMERIC)) as avg_premium
-FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown'
-GROUP BY territory_label
-ORDER BY record_count DESC;
-
--- Data quality check
-SELECT 'Gender Completeness' as metric,
-       ROUND(COUNT(CASE WHEN gender IS NOT NULL THEN 1 END)::NUMERIC 
-       / COUNT(*)::NUMERIC * 100, 2)::TEXT || '%' as score
-FROM gold.fact_insurance_performance;
-```
-
-## 🗄️ Database Connection
-
-### Connection Details
-
+### PostgreSQL Connection
 ```
 Host: localhost
 Port: 5435
-Username: postgres
-Password: postgres
 Database: postgres
-```
-
-### Connect with psql
-
-```bash
-PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres
+User: postgres
+Password: postgres
 ```
 
 ### Schemas
-
 - **silver:** Staging tables (6 tables, 95k+ rows)
 - **gold:** Fact tables (1 table, 95.5k rows)
-- **public:** Default schema
 
-## 🔧 Common Tasks
-
-### Run a DAG
-
-1. Go to Airflow UI: http://localhost:8080
-2. Find the DAG (e.g., `2_bronze_to_silver`)
-3. Click "Trigger DAG" (play button)
-4. Monitor in Logs tab
-
-### Query the Database
-
+### Test Connection
 ```bash
-# Connect
-PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres
-
-# List silver tables
-\dt silver.*
-
-# Query gold fact table
-SELECT * FROM gold.fact_insurance_performance LIMIT 5;
+PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres -c "SELECT COUNT(*) FROM gold.fact_insurance_performance;"
 ```
 
-### Run Data Quality Tests
+## DAGs
+
+### DAG 1: insurance_ingestion
+- Schedule: Daily 2:00 AM UTC (0 2 * * *)
+- Action: Converts CSV files to Parquet with metadata
+- Output: `/include/bronze/` parquet files
+
+### DAG 2: bronze_to_silver
+- Schedule: Daily 3:00 AM UTC (0 3 * * *)
+- Action: Loads Parquet files into PostgreSQL silver schema
+- Output: 6 staging tables
+
+### DAG 3: gold_transformation
+- Schedule: Daily 4:00 AM UTC (0 4 * * *)
+- Action: Creates enriched fact table from joined silver tables
+- Output: `gold.fact_insurance_performance` (95,536 rows)
+
+## SQL Queries
+
+All available SQL queries are in the `sql/` directory:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres -f sql/02_quality_tests.sql
+# View reporting queries (66 total)
+cat sql/01_reporting_queries.sql
+
+# View quality tests
+cat sql/02_quality_tests.sql
+
+# View monitoring queries
+cat sql/03_scheduling_and_monitoring.sql
 ```
 
-## 🚨 Troubleshooting
+## Grafana Setup
 
-### PostgreSQL Connection Issues
+### Add PostgreSQL Data Source
 
-```bash
-# Check if container is running
-docker ps | grep postgres
+1. Open http://localhost:3000
+2. Settings → Data Sources
+3. Add PostgreSQL data source:
+   - Name: `PostgreSQL-Gold`
+   - Host: `host.docker.internal:5435` (Docker) or `localhost:5435` (Local)
+   - Database: `postgres`
+   - User: `postgres`
+   - Password: `postgres`
 
-# Test connection
-PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres -c "SELECT version();"
+### Create Dashboards
+
+Example query to start:
+```sql
+SELECT COUNT(*) as total_records
+FROM gold.fact_insurance_performance
 ```
 
-### DAG Not Showing Up
+See `sql/01_reporting_queries.sql` for 60+ additional queries.
 
-- Check `dags/` for Python files
-- Verify syntax: `python -m py_compile dags/*.py`
+## Troubleshooting
+
+### PostgreSQL not connecting in Grafana
+- Ensure PostgreSQL is running: `docker ps | Select-String postgres`
+- Use `host.docker.internal:5435` if Grafana runs in Docker
+- Test: `PGPASSWORD=postgres psql -h localhost -p 5435 -U postgres -d postgres -c "SELECT 1"`
+
+### DAG not showing in Airflow
+- Check for syntax errors: `python -m py_compile dags/*.py`
 - Restart scheduler: `astro dev restart`
 
-### Memory/Resource Issues
+### Data quality metrics
+- Gender completeness: 97.13%
+- Territory join success: 1.20%
+- Census coverage: 1.22%
 
-```bash
-astro dev stop
-astro dev start --no-cache
-```
+## Files
 
-## 📚 Resources
+| File | Purpose |
+|------|---------|
+| `dags/*.py` | Airflow DAG definitions |
+| `sql/*.sql` | SQL queries for reporting & QA |
+| `config/airflow_settings.yaml` | Airflow configuration |
+| `.astro/` | Astronomer runtime config |
+| `include/landing/` | CSV input files |
+| `include/bronze/` | Parquet output from DAG 1 |
+| `docker-compose.yaml` | Docker compose configuration |
+| `Dockerfile` | Astronomer Runtime image |
+| `requirements.txt` | Python dependencies (pandas, pyarrow) |
+| `packages.txt` | OS-level dependencies |
 
-- [Airflow Documentation](https://airflow.apache.org/)
-- [Astronomer Documentation](https://www.astronomer.io/docs/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [Parquet Format](https://parquet.apache.org/)
+## Status
 
-## ✅ Project Status
+✅ **Operational**
+- Bronze layer: CSV → Parquet ✓
+- Silver layer: Parquet → SQL tables ✓
+- Gold layer: Enriched fact table ✓
+- Data validation: Complete ✓
+- SQL queries: 66 available ✓
+- Grafana: Ready for dashboards ✓
 
-| Component | Status | Notes |
-|---|---|---|
-| Bronze Layer | ✅ Operational | CSV → Parquet conversion |
-| Silver Layer | ✅ Operational | Parquet → SQL with schema evolution |
-| Gold Layer | ✅ Operational | Enriched fact table with joins |
-| Data Validation | ✅ Complete | Quality metrics established |
-| Reporting Queries | ✅ Complete | 66 queries ready for BI tools |
-| Data Quality Tests | ✅ Complete | Automated testing & monitoring |
-| DAG Scheduling | ✅ Configured | Daily runs, staggered execution |
-| Dashboards | 🔄 Pending | Ready for BI tool integration |
+## GitHub
+
+Repository: https://github.com/satyadeep11singh/e2e-airflow-graphana-etl-project
+
+## Next Steps
+
+1. Review DAGs in Airflow UI (http://localhost:8080)
+2. Trigger DAGs manually to verify pipeline
+3. Connect Grafana to PostgreSQL
+4. Create dashboards using SQL queries
+5. Set up monitoring and alerts
 
 ---
 
-**Last Updated:** December 19, 2025 | **Status:** ✅ Fully Operational | **File Structure:** ✅ Standardized
+**Last Updated:** December 19, 2025  
+**Status:** ✅ Production Ready
