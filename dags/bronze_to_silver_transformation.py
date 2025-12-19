@@ -69,7 +69,7 @@ def load_parquet_to_silver():
         print(f"   - {tbl}")
 
 with DAG(
-    dag_id='2_bronze_to_silver_v3',
+    dag_id='bronze_to_silver_transformation',
     start_date=datetime(2023, 1, 1),
     schedule_interval='0 3 * * *',  # Run daily at 3 AM UTC (1 hour after DAG 1)
     catchup=False,

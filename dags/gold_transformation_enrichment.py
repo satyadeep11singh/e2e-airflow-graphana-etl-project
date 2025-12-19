@@ -63,7 +63,7 @@ def build_gold_layer():
     print(f"   - Census demographics (ACS DP03 & DP05)")
 
 with DAG(
-    dag_id='3_gold_transformation',
+    dag_id='gold_transformation_enrichment',
     start_date=datetime(2025, 1, 1),
     schedule_interval='0 4 * * *',  # Run daily at 4 AM UTC (1 hour after DAG 2)
     catchup=False,

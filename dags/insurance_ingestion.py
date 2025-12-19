@@ -67,7 +67,7 @@ def process_to_bronze(**context):
             raise e
 
 with DAG(
-    dag_id='1_ingestion_raw_to_bronze',
+    dag_id='insurance_ingestion_raw_to_bronze',
     default_args=default_args,
     start_date=datetime(2023, 1, 1),
     schedule_interval='0 2 * * *',  # Run daily at 2 AM UTC

@@ -29,7 +29,7 @@ SELECT
     MAX(CAST(current_premium AS NUMERIC)) as max_premium,
     MIN(CAST(current_premium AS NUMERIC)) as min_premium
 FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown'
+WHERE territory_label IS NOT NULL
 GROUP BY territory_label
 ORDER BY record_count DESC
 LIMIT 20;
@@ -143,47 +143,30 @@ ORDER BY batch_id DESC;
 -- 3.1: Territory Dimension Summary (for Dashboard)
 -- Aggregated metrics by territory for dashboard cards
 SELECT 
-    territory_label as territory,
-    territory_area as area,
-    territory_town as town,
-    territory_county as county,
+    territory_label::TEXT as territory,
     COUNT(*) as total_records,
     COUNT(DISTINCT "GEO_id") as unique_locations,
-    ROUND(AVG(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as avg_premium,
-    ROUND(SUM(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as total_premium,
+        ROUND(AVG(CAST(current_premium AS NUMERIC)), 2) as avg_premium,
+        ROUND(SUM(CAST(current_premium AS NUMERIC)), 2) as total_premium,
     COUNT(CASE WHEN gender = 'M' THEN 1 END) as male_count,
     COUNT(CASE WHEN gender = 'F' THEN 1 END) as female_count
 FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown'
-GROUP BY territory_label, territory_area, territory_town, territory_county
-ORDER BY total_records DESC;
+WHERE territory_label IS NOT NULL
+GROUP BY territory_label
+ORDER BY total_records DESC
+LIMIT 20;
 
 -- 3.2: Demographics Dashboard - Age Groups
--- Group records by age brackets for demographic analysis
+-- Territory distribution for demographic analysis
 SELECT 
-    CASE 
-        WHEN EXTRACT(YEAR FROM AGE(birthdate)) < 25 THEN '18-24'
-        WHEN EXTRACT(YEAR FROM AGE(birthdate)) < 35 THEN '25-34'
-        WHEN EXTRACT(YEAR FROM AGE(birthdate)) < 45 THEN '35-44'
-        WHEN EXTRACT(YEAR FROM AGE(birthdate)) < 55 THEN '45-54'
-        WHEN EXTRACT(YEAR FROM AGE(birthdate)) < 65 THEN '55-64'
-        ELSE '65+'
-    END as age_group,
+    territory_label::TEXT as territory,
     COUNT(*) as record_count,
-    ROUND(AVG(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as avg_premium,
-    AVG(acs03_total_population) as avg_population
+        ROUND(AVG(CAST(current_premium AS NUMERIC)), 2) as avg_premium
 FROM gold.fact_insurance_performance
-WHERE birthdate IS NOT NULL
-GROUP BY age_group
-ORDER BY 
-    CASE 
-        WHEN age_group = '18-24' THEN 1
-        WHEN age_group = '25-34' THEN 2
-        WHEN age_group = '35-44' THEN 3
-        WHEN age_group = '45-54' THEN 4
-        WHEN age_group = '55-64' THEN 5
-        ELSE 6
-    END;
+WHERE territory_label IS NOT NULL
+GROUP BY territory_label
+ORDER BY record_count DESC
+LIMIT 15;
 
 -- 3.3: Gender Distribution Dashboard
 -- Gender-based metrics for dashboard
@@ -191,51 +174,44 @@ SELECT
     gender,
     COUNT(*) as record_count,
     ROUND(COUNT(*)::NUMERIC / (SELECT COUNT(*) FROM gold.fact_insurance_performance)::NUMERIC * 100, 2) as percentage,
-    ROUND(AVG(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as avg_premium,
-    ROUND(SUM(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as total_premium
+    ROUND(AVG(CAST(current_premium AS NUMERIC)), 2) as avg_premium,
+    ROUND(SUM(CAST(current_premium AS NUMERIC)), 2) as total_premium
 FROM gold.fact_insurance_performance
 WHERE gender IS NOT NULL
 GROUP BY gender
 ORDER BY record_count DESC;
 
 -- 3.4: Census Data Analysis - Population Density
--- Use census data to analyze geographic distribution
+-- Use census data to analyze records with census data
 SELECT 
-    territory_label,
+    'Census Records' as metric,
+    COUNT(*) as record_count,
     ROUND(AVG(acs03_total_population)) as avg_population,
     ROUND(AVG(acs03_median_age), 1) as avg_median_age,
-    ROUND(AVG(CAST(acs03_married_percent AS NUMERIC)), 2) as avg_marriage_rate,
-    COUNT(*) as insurance_records
+    COUNT(DISTINCT territory_label) as territories_with_census
 FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown' 
-  AND acs03_total_population IS NOT NULL
-GROUP BY territory_label
-ORDER BY avg_population DESC
-LIMIT 20;
+WHERE acs03_total_population IS NOT NULL;
 
 -- 3.5: Premium Distribution - For Dashboard Visualizations
--- Quartile analysis for premium pricing
+-- Premium statistics across all records
 SELECT 
-    territory_label,
-    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY CAST(current_premium AS NUMERIC)) as q1_premium,
-    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY CAST(current_premium AS NUMERIC)) as median_premium,
-    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY CAST(current_premium AS NUMERIC)) as q3_premium,
-    MAX(CAST(current_premium AS NUMERIC)) as max_premium,
-    MIN(CAST(current_premium AS NUMERIC)) as min_premium
-FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown'
-GROUP BY territory_label
-ORDER BY median_premium DESC;
+    COUNT(*) as total_records,
+        ROUND(AVG(CAST(current_premium AS NUMERIC)), 2) as avg_premium,
+        ROUND(MAX(CAST(current_premium AS NUMERIC)), 2) as max_premium,
+        ROUND(MIN(CAST(current_premium AS NUMERIC)), 2) as min_premium,
+        ROUND(STDDEV(CAST(current_premium AS NUMERIC)), 2) as stddev_premium
+FROM gold.fact_insurance_performance;
 
--- 3.6: Time Series - Ingestion by Date (for Time-based Dashboard)
+-- 3.6: Time Series - Ingestion by Batch (for Time-based Dashboard)
 SELECT 
-    DATE(ingested_at) as ingestion_date,
-    COUNT(*) as records_per_day,
-    SUM(CAST(COALESCE(current_premium, 0) AS NUMERIC)) as daily_premium_total,
-    ROUND(AVG(CAST(COALESCE(current_premium, 0) AS NUMERIC)), 2) as daily_avg_premium
+    MAX(ingested_at) as time,
+    batch_id as batch,
+    COUNT(*) as records_per_batch,
+    ROUND(SUM(CAST(current_premium AS NUMERIC)), 2) as batch_premium_total,
+    ROUND(AVG(CAST(current_premium AS NUMERIC)), 2) as batch_avg_premium
 FROM gold.fact_insurance_performance
-GROUP BY DATE(ingested_at)
-ORDER BY ingestion_date DESC;
+GROUP BY batch_id
+ORDER BY batch_id DESC;
 
 -- ============================================================================
 -- SECTION 4: SUMMARY STATISTICS & KPIs
@@ -244,21 +220,10 @@ ORDER BY ingestion_date DESC;
 -- 4.1: Overall Pipeline Health Summary
 -- KPI dashboard showing pipeline health
 SELECT 
-    'Total Records Loaded' as kpi,
-    COUNT(*)::TEXT as value,
-    'gold.fact_insurance_performance' as source
-FROM gold.fact_insurance_performance
-UNION ALL
-SELECT 'Unique Geographies', COUNT(DISTINCT "GEO_id")::TEXT, 'gold.fact_insurance_performance'
-FROM gold.fact_insurance_performance
-UNION ALL
-SELECT 'Records with Territory Match', COUNT(*)::TEXT, 'gold.fact_insurance_performance'
-FROM gold.fact_insurance_performance WHERE territory_label != 'Unknown'
-UNION ALL
-SELECT 'Records with Census Data', COUNT(*)::TEXT, 'gold.fact_insurance_performance'
-FROM gold.fact_insurance_performance WHERE acs03_total_population IS NOT NULL
-UNION ALL
-SELECT 'Total Premium Value', ROUND(SUM(CAST(COALESCE(current_premium, 0) AS NUMERIC)))::TEXT, 'gold.fact_insurance_performance'
+    COUNT(*) as total_records,
+    COUNT(DISTINCT "GEO_id") as unique_geos,
+    COUNT(DISTINCT territory_label) as unique_territories,
+    COUNT(DISTINCT batch_id) as total_batches
 FROM gold.fact_insurance_performance;
 
 -- 4.2: Data Quality Score
@@ -268,7 +233,7 @@ WITH quality_metrics AS (
         COUNT(*) as total_records,
         COUNT(CASE WHEN "GEO_id" IS NOT NULL THEN 1 END) as geo_populated,
         COUNT(CASE WHEN gender IS NOT NULL THEN 1 END) as gender_populated,
-        COUNT(CASE WHEN territory_label != 'Unknown' THEN 1 END) as territory_matched,
+        COUNT(CASE WHEN territory_label IS NOT NULL THEN 1 END) as territory_matched,
         COUNT(CASE WHEN acs03_total_population IS NOT NULL THEN 1 END) as census_matched
     FROM gold.fact_insurance_performance
 )
@@ -311,7 +276,7 @@ SELECT
     ingested_at,
     batch_id
 FROM gold.fact_insurance_performance
-WHERE territory_label != 'Unknown'
+WHERE territory_label IS NOT NULL
 LIMIT 1000;  -- Change LIMIT as needed for export size
 
 -- ============================================================================
