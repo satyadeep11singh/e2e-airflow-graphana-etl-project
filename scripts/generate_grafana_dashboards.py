@@ -50,6 +50,60 @@ def get_datasource_uid(user, password):
         print(f"Error: {e}")
         return None
 
+def get_dashboard_by_title(title, user, password):
+    """Find existing dashboard by title"""
+    try:
+        credentials = f"{user}:{password}"
+        b64_credentials = base64.b64encode(credentials.encode()).decode()
+        
+        headers = {
+            "Authorization": f"Basic {b64_credentials}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(
+            f"{GRAFANA_URL}/api/search?query={title}",
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            dashboards = response.json()
+            for db in dashboards:
+                if db['title'] == title and db['type'] == 'dash-db':
+                    return db['uid']
+        return None
+    except Exception as e:
+        print(f"Error searching for dashboard: {e}")
+        return None
+
+def get_dashboard_by_title(title, user, password):
+    """Find existing dashboard by title"""
+    try:
+        credentials = f"{user}:{password}"
+        b64_credentials = base64.b64encode(credentials.encode()).decode()
+        
+        headers = {
+            "Authorization": f"Basic {b64_credentials}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(
+            f"{GRAFANA_URL}/api/search?query={title}",
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            dashboards = response.json()
+            for db in dashboards:
+                if db['title'] == title and db['type'] == 'dash-db':
+                    return db['uid']
+        return None
+    except Exception as e:
+        print(f"Error searching for dashboard: {e}")
+        return None
+
 def get_visualization_type(title):
     """Determine visualization type based on query title"""
     title_lower = title.lower()
@@ -138,7 +192,7 @@ def read_sql_queries(filepath):
     
     return queries
 
-def create_dashboard_json(queries, datasource_uid, title="Reporting Dashboard"):
+def create_dashboard_json(queries, datasource_uid, title="Reporting Dashboard", existing_uid=None):
     """Create Grafana dashboard JSON from queries with appropriate visualizations"""
     
     if not datasource_uid:
@@ -237,7 +291,7 @@ def create_dashboard_json(queries, datasource_uid, title="Reporting Dashboard"):
                 "from": "now-24h",
                 "to": "now"
             },
-            "uid": None,
+            "uid": existing_uid,
             "version": 0
         },
         "overwrite": True
@@ -245,7 +299,7 @@ def create_dashboard_json(queries, datasource_uid, title="Reporting Dashboard"):
     
     return dashboard
 
-def post_dashboard(dashboard_json, user, password):
+def post_dashboard(dashboard_json, user, password, existing_uid=None):
     """Post dashboard to Grafana via API using basic auth"""
     try:
         # Create basic auth header
@@ -266,8 +320,12 @@ def post_dashboard(dashboard_json, user, password):
         
         if response.status_code in [200, 201]:
             result = response.json()
-            print(f"✅ Dashboard created successfully!")
-            print(f"📊 View at: {GRAFANA_URL}/d/{result['uid']}")
+            if existing_uid:
+                print(f"✅ Dashboard updated successfully!")
+                print(f"📊 View at: {GRAFANA_URL}/d/{result['uid']}")
+            else:
+                print(f"✅ Dashboard created successfully!")
+                print(f"📊 View at: {GRAFANA_URL}/d/{result['uid']}")
             return True
         else:
             print(f"❌ Error: {response.status_code}")
@@ -281,6 +339,7 @@ def post_dashboard(dashboard_json, user, password):
 def main():
     """Main function"""
     sql_file = Path("sql/01_reporting_queries.sql")
+    dashboard_title = "Insurance Reporting Dashboard"
     
     if not sql_file.exists():
         print(f"❌ SQL file not found: {sql_file}")
@@ -310,13 +369,23 @@ def main():
         print("   2. PostgreSQL-Gold datasource is configured")
         return
     
-    print(f"\n📊 Creating dashboard with {len(queries)} panels...")
-    dashboard = create_dashboard_json(queries, datasource_uid, "Insurance Reporting Dashboard")
+    # Check if dashboard already exists
+    print(f"\n🔍 Checking for existing dashboard '{dashboard_title}'...")
+    existing_uid = get_dashboard_by_title(dashboard_title, GRAFANA_USER, GRAFANA_PASSWORD)
+    
+    if existing_uid:
+        print(f"✓ Found existing dashboard (UID: {existing_uid})")
+        print(f"📝 Dashboard will be updated with {len(queries)} panels...")
+    else:
+        print(f"✓ No existing dashboard found")
+        print(f"📝 Creating new dashboard with {len(queries)} panels...")
+    
+    dashboard = create_dashboard_json(queries, datasource_uid, dashboard_title, existing_uid)
     
     if not dashboard:
         return
     
-    success = post_dashboard(dashboard, GRAFANA_USER, GRAFANA_PASSWORD)
+    success = post_dashboard(dashboard, GRAFANA_USER, GRAFANA_PASSWORD, existing_uid)
     
     if success:
         print("\n✅ Setup complete!")
