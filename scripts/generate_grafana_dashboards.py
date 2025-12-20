@@ -336,10 +336,31 @@ def post_dashboard(dashboard_json, user, password, existing_uid=None):
         print(f"   Make sure Grafana is running on {GRAFANA_URL}")
         return False
 
+def select_sql_file():
+    """Prompt user to select which SQL file to generate from"""
+    print("\n" + "=" * 80)
+    print("SELECT REPORT TYPE")
+    print("=" * 80)
+    print("\n📋 Available reports:\n")
+    print("  [1] Reporting Queries (sql/01_reporting_queries.sql)")
+    print("      → Data quality checks, pipeline health, dashboard prep")
+    print("\n  [2] Stakeholder Queries (sql/stakeholder_queries.sql)")
+    print("      → Top 10 business questions for executives, finance, marketing, risk")
+    print("\n" + "=" * 80)
+    
+    while True:
+        choice = input("\nEnter your choice (1 or 2): ").strip()
+        if choice == "1":
+            return Path("sql/01_reporting_queries.sql"), "Insurance Reporting Dashboard"
+        elif choice == "2":
+            return Path("sql/stakeholder_queries.sql"), "Stakeholder Analysis Dashboard"
+        else:
+            print("❌ Invalid choice. Please enter 1 or 2.")
+
 def main():
     """Main function"""
-    sql_file = Path("sql/01_reporting_queries.sql")
-    dashboard_title = "Insurance Reporting Dashboard"
+    # Prompt user to select which report to generate
+    sql_file, dashboard_title = select_sql_file()
     
     if not sql_file.exists():
         print(f"❌ SQL file not found: {sql_file}")
